@@ -37,6 +37,8 @@ def search_text():
     try:
         # obtenemos el mensaje en el formato que venga, [query|body|json]
         query = request.args.get('query') or request.form.get('query') or request.values.get('query') or request.json.get('query')
+        image_path = request.args.get('image_path') or request.form.get('image_path') or request.values.get('image_path') or request.json.get('image_path')
+        
         collection = request.args.get('collection') or request.form.get('collection') or request.values.get('collection') or request.json.get('collection')
         filters = request.args.get('filters') or request.form.get('filters') or request.values.get('filters') or request.json.get('filters')
         
@@ -45,10 +47,20 @@ def search_text():
         
         # si no obtenemos nada del mensaje retornamos 400
         
-        if all(list([query, collection])) == False: 
-            return jsonify(message="BAD REQUEST", status=400)
+        # if all(list([query, collection])) == False: 
+        #     return jsonify(message="BAD REQUEST", status=400)
+        
+        if image_path:
+            image = Image.open(image_path)
+            processor, model = create_proccessor_image()
+            vectors = get_embbeding_image(image, processor, model)
+            metadata = search(vectors[0], collection_name=collection, filters=filters, options=options)
 
-        metadata = search(query, collection_name=collection, filters=filters, options=options)
+        else: 
+            tokenizer = create_tokenizer()
+            vectors = np.array(tokenizer.encode(query)).tolist()
+            metadata = search(vectors, collection_name=collection, filters=filters, options=options)
+        
         status = 200
         if (any(metadata) == False): status = 404
         return jsonify(
@@ -76,7 +88,7 @@ def createCollection():
         if collection == False: 
             return jsonify(message="BAD REQUEST", status=400)
 
-        create_collection(collection)
+        create_collection(collection, 384)
         return jsonify(
             message='success',
             status=200
@@ -103,13 +115,16 @@ def createData():
     collection = request.args.get('collection') or request.form.get('collection') or request.values.get('collection') or request.json.get('collection')
     payload = request.args.get('payload') or request.form.get('payload') or request.values.get('payload') or request.json.get('payload')
     payload = [payload]
-    print(collection, payload)
+    image_path = request.args.get('image_path') or request.form.get('image_path') or request.values.get('image_path') or request.json.get('image_path')
+    print(image_path)
     try:
         # si no obtenemos nada del mensaje retornamos 400
         # if collection == False: 
         #     return jsonify(message="BAD REQUEST", status=400)
 
-        create_dataframe(payload, collection)
+        if image_path: create_image_dataframe(payload, collection, image_path)            
+        else: create_dataframe(payload, collection)
+
         return jsonify(
             message='success',
             status=200
@@ -126,6 +141,7 @@ import numpy as np
 import pickle as pk
 import torch
 from tqdm import tqdm
+from PIL import Image
 
 def create_proccessor_image():
     processor = ViTImageProcessor.from_pretrained('facebook/dino-vits16')
@@ -137,10 +153,21 @@ def get_embbeding_image (image, processor, model):
     inputs = processor(images=image, return_tensors="pt")
     with torch.no_grad():
         outputs = model(**inputs).last_hidden_state.mean(dim=1).cpu().numpy()
-    
-    return outputs[0]
+        
+    return outputs
 
-
+def create_image_dataframe(d: any, collection_name: str, path_image: str):
+    print("Creating dataframe")
+    try:
+        df = pd.DataFrame.from_dict(d)
+        image = Image.open(path_image)
+        processor, model = create_proccessor_image()
+        vectors = get_embbeding_image(image, processor, model)
+        chunk = create_chunk(df)
+        upsert_payload(chunk, collection_name, vectors)
+    except Exception as e:
+        print("Error: " + str(e))
+        return e
 
 def create_dataframe(d: any, collection_name: str):
     print("Creating dataframe")
@@ -206,11 +233,11 @@ def vectorize(df, tokenizer):
     return np.concatenate(vectors)
 
 
-def create_collection(collection_name: str) -> None:
+def create_collection(collection_name: str, size=768) -> None:
     print("Creating collection")
     client.recreate_collection(
         collection_name=collection_name,
-        vectors_config=models.VectorParams(size=768, distance=models.Distance.COSINE),
+        vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
         optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
         hnsw_config=models.HnswConfigDiff(on_disk=True, m=28,
         ef_construct=256, full_scan_threshold=10000),
@@ -270,25 +297,25 @@ def create_payload(df):
 
 
 def upsert_payload(df, collection_name: str, vectors):
+    payloads = create_payload(df)
     client.upsert(
     collection_name=collection_name,
     points=models.Batch(
-        ids=[i for i in range(df.shape[0])],
-        payloads=create_payload(df),
+        ids=[int(payload['id']) for payload in payloads],
+        payloads=payloads,
         vectors=[v.tolist() for v in vectors],
     ),
 )
 
 
-def search(query: str, collection_name: str, filters: dict, options: dict):
+def search(vectors, collection_name: str, filters: dict, options: dict):
     must = filters_must(filters)
     should = filters_should(filters)
     must_not = filters_must_not(filters)
-    tokenizer = create_tokenizer()
     res = client.search(
-        query_vector=np.array(tokenizer.encode(query)).tolist(), 
+        query_vector=vectors, 
         collection_name=collection_name,
-        score_threshold=options['score_threshold'] if 'score_threshold' in options else .2, 
+        score_threshold=options['score_threshold'] if 'score_threshold' in options else .8, 
         limit=options['limit'] if 'limit' in options else 10,
         append_payload=True, 
         with_vectors=False,
@@ -309,12 +336,27 @@ def search(query: str, collection_name: str, filters: dict, options: dict):
     )
     
     payloads = {}
-    if (len(res) > 0):
-        print(res)
-        for p in res[0]:
-          if type(p) == tuple:
-            key, value = p
-            payloads[key] = value
+    
+    for scored_point in res:
+        print('scored_point', scored_point)
+        id, version, score, payload, vector = scored_point
+        id_key, id_value = id
+        version_key, version_value = version
+        score_key, score_value = score
+        payload_key, payload_value = payload
+        # description = payload_value['description']
+        # payload_id = payload_value['id']
+        name = payload_value['name']
+        # text = payload_value['text']
+        # print(f"id: {id}, version: {version}, score: {score}, payload: {payload}")
+        
+        payloads[f'{id_value}'] = {
+            "id": id_value,
+            "version": version_value,
+            "score": score_value,
+            "payload": payload_value
+        }
+    
     return payloads
 
 def filters_must(filters: dict):
