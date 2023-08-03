@@ -80,6 +80,7 @@ def createCollection():
     @example createCollection
     {
         "collection": "tutu"
+    }
     '''
     try:
         collection = request.args.get('collection') or request.form.get('collection') or request.values.get('collection') or request.json.get('collection')
@@ -110,7 +111,7 @@ def createData():
             "id": 3213213,
             "name": "foo",
             "description": "foo",
-        }
+    }
     '''
     collection = request.args.get('collection') or request.form.get('collection') or request.values.get('collection') or request.json.get('collection')
     payload = request.args.get('payload') or request.form.get('payload') or request.values.get('payload') or request.json.get('payload')
