@@ -8,7 +8,7 @@ Original file is located at
 """
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
-
+from transformers import ViTImageProcessor, ViTModel
 
 from flask import Flask, render_template_string, request, jsonify
 app = Flask(__name__)
@@ -126,6 +126,21 @@ import numpy as np
 import pickle as pk
 import torch
 from tqdm import tqdm
+
+def create_proccessor_image():
+    processor = ViTImageProcessor.from_pretrained('facebook/dino-vits16')
+    model = ViTModel.from_pretrained('facebook/dino-vits16')
+
+    return processor, model
+
+def get_embbeding_image (image, processor, model):
+    inputs = processor(images=image, return_tensors="pt")
+    with torch.no_grad():
+        outputs = model(**inputs).last_hidden_state.mean(dim=1).cpu().numpy()
+    
+    return outputs[0]
+
+
 
 def create_dataframe(d: any, collection_name: str):
     print("Creating dataframe")
