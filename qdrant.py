@@ -242,17 +242,23 @@ def create_collection(collection_name: str, size=768) -> None:
         collection_name=collection_name,
         vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
         optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
-        hnsw_config=models.HnswConfigDiff(on_disk=True, m=28,
-        ef_construct=256, full_scan_threshold=10000),
-        quantization_config=models.ScalarQuantization(
-            scalar=models.ScalarQuantizationConfig(
-                type=models.ScalarType.INT8,
-                ignore=False,
-                rescore=True,
-                quantile=.9,
-                always_ram=False,
-            ),
+        hnsw_config=models.HnswConfigDiff(on_disk=True, m=64,
+        ef_construct=512), #full_scan_threshold=10000
+        quantization_config=models.ProductQuantization(
+            type=models.ProductQuantizationType.PQ,
+            m=8,
+            ksub=8,
+            always_ram=True
         )
+        # quantization_config=models.ScalarQuantization(
+        #     scalar=models.ScalarQuantizationConfig(
+        #         type=models.ScalarType.INT8,
+        #         ignore=False,
+        #         rescore=True,
+        #         quantile=.9,
+        #         always_ram=False,
+        #     ),
+        # )
     )
 
     client.create_payload_index(
