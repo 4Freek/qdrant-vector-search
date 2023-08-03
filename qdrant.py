@@ -144,9 +144,11 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 
+device = torch.device("cuda" if torch.cuda.is_available else "cpu")
+
 def create_proccessor_image():
     processor = ViTImageProcessor.from_pretrained('facebook/dino-vits16')
-    model = ViTModel.from_pretrained('facebook/dino-vits16')
+    model = ViTModel.from_pretrained('facebook/dino-vits16').to(device)
 
     return processor, model
 
