@@ -87,8 +87,8 @@ def createCollection():
         # si no obtenemos nada del mensaje retornamos 400
         if collection == False: 
             return jsonify(message="BAD REQUEST", status=400)
-
-        create_collection(collection, 384)
+        size_embbending_collection = 384 if collection.lower().split()[0] == 'image' else 768
+        create_collection(collection, size_embbending_collection)
         return jsonify(
             message='success',
             status=200
