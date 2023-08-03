@@ -315,7 +315,7 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
     res = client.search(
         query_vector=vectors, 
         collection_name=collection_name,
-        score_threshold=options['score_threshold'] if 'score_threshold' in options else .8, 
+        score_threshold=options['score_threshold'] if 'score_threshold' in options else .7, 
         limit=options['limit'] if 'limit' in options else 10,
         append_payload=True, 
         with_vectors=False,
@@ -338,7 +338,6 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
     payloads = {}
     
     for scored_point in res:
-        print('scored_point', scored_point)
         id, version, score, payload, vector = scored_point
         id_key, id_value = id
         version_key, version_value = version
@@ -356,7 +355,7 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
             "score": score_value,
             "payload": payload_value
         }
-    
+    payloads = sorted(payloads.values(), key=lambda x: x['score'], reverse=True)[:2]
     return payloads
 
 def filters_must(filters: dict):
