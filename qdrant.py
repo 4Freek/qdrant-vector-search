@@ -84,12 +84,16 @@ def createCollection():
     '''
     try:
         collection = request.args.get('collection') or request.form.get('collection') or request.values.get('collection') or request.json.get('collection')
+        update = request.args.get('update_collection') or request.form.get('update_collection') or request.values.get('update_collection') or request.json.get('update_collection')
         
         # si no obtenemos nada del mensaje retornamos 400
         if collection == False: 
             return jsonify(message="BAD REQUEST", status=400)
         size_embbending_collection = 384 if collection.lower().split()[0] == 'image' else 768
-        create_collection(collection, size_embbending_collection)
+
+        if update: update_collection(collection, size_embbending_collection)
+        else: create_collection(collection, size_embbending_collection)
+
         return jsonify(
             message='success',
             status=200
@@ -242,14 +246,12 @@ def create_collection(collection_name: str, size=768) -> None:
         collection_name=collection_name,
         vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
         optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
-        hnsw_config=models.HnswConfigDiff(on_disk=True, m=64,
-        ef_construct=512), #full_scan_threshold=10000
-        quantization_config=models.ProductQuantization(
-            type=models.ProductQuantizationType.PQ,
-            m=8,
-            ksub=8,
-            always_ram=True
-        )
+        quantization_config=models.ScalarQuantization(
+            scalar=models.ScalarQuantizationConfig(
+                type=models.ScalarType.INT8,
+                always_ram=True,
+            ),
+        ),
         # quantization_config=models.ScalarQuantization(
         #     scalar=models.ScalarQuantizationConfig(
         #         type=models.ScalarType.INT8,
@@ -274,22 +276,28 @@ def create_collection(collection_name: str, size=768) -> None:
     )
 
 
-def update_collection(collection_name: str, tokenizer) -> None:
+def update_collection(collection_name: str, size) -> None:
     client.update_collection(
         collection_name=collection_name,
-        # vectors_config=models.VectorParams(size=tokenizer.get_sentence_embedding_dimension(), distance=models.Distance.COSINE),
+        vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
         optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
-        hnsw_config=models.HnswConfigDiff(on_disk=True, m=16,
-        ef_construct=512, full_scan_threshold=10000),
         quantization_config=models.ScalarQuantization(
             scalar=models.ScalarQuantizationConfig(
                 type=models.ScalarType.INT8,
-                # ignore=False,
-                rescore=False,
-                quantile=.99,
                 always_ram=True,
             ),
-        )
+        ),
+        # hnsw_config=models.HnswConfigDiff(on_disk=True, m=16,
+        # ef_construct=512, full_scan_threshold=10000),
+        # quantization_config=models.ScalarQuantization(
+        #     scalar=models.ScalarQuantizationConfig(
+        #         type=models.ScalarType.INT8,
+        #         # ignore=False,
+        #         rescore=False,
+        #         quantile=.99,
+        #         always_ram=True,
+        #     ),
+        # )
     )
 
 
@@ -329,14 +337,11 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
         append_payload=True, 
         with_vectors=False,
         search_params=models.SearchParams(
-            hnsw_ef=128,
-            exact=True,
             quantization=models.QuantizationSearchParams(
-                # ignore=False,
+                ignore=True,
                 rescore=False,
-                quantile=.99,
-                always_ram=True,
-        )),
+                oversampling=2.0,
+            )),
         query_filter=models.Filter(
             must=must,
             should=should,
@@ -345,7 +350,7 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
     )
     
     payloads = {}
-    
+    print(res)
     for scored_point in res:
         id, version, score, payload, vector = scored_point
         id_key, id_value = id
