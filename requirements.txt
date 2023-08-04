@@ -10,3 +10,5 @@ fast_sentence_transformers==0.4.1
 protobuf==3.20.3
 transformers
 Pillow
+fastapi
+uvicorn

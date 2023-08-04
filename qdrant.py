@@ -13,6 +13,14 @@ from transformers import ViTImageProcessor, ViTModel
 from flask import Flask, render_template_string, request, jsonify
 app = Flask(__name__)
 
+
+client = QdrantClient(
+    # url="http://localhost:6333",
+    url="https://9c034f95-4fec-472b-a919-d088f1fcf901.eu-central-1-0.aws.cloud.qdrant.io",
+    api_key="D6pVPTQSEwbvOCCdXbyhv3pkSk4IjuK1icfL4a_Z8bDHSqRmnoN5bQ",
+    timeout=20_000
+)
+
 # ej => curl [IP]:5000
 @app.route('/')
 def hello():
@@ -148,11 +156,11 @@ import torch
 from tqdm import tqdm
 from PIL import Image
 
-device = torch.device("cuda" if torch.cuda.is_available else "cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def create_proccessor_image():
     processor = ViTImageProcessor.from_pretrained('facebook/dino-vits16')
-    model = ViTModel.from_pretrained('facebook/dino-vits16').to(device)
+    model = ViTModel.from_pretrained('facebook/dino-vits16').to("cpu")
 
     return processor, model
 
@@ -245,13 +253,13 @@ def create_collection(collection_name: str, size=768) -> None:
     client.recreate_collection(
         collection_name=collection_name,
         vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
-        optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
-        quantization_config=models.ScalarQuantization(
-            scalar=models.ScalarQuantizationConfig(
-                type=models.ScalarType.INT8,
-                always_ram=True,
-            ),
-        ),
+        # optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
+        # quantization_config=models.ScalarQuantization(
+        #     scalar=models.ScalarQuantizationConfig(
+        #         type=models.ScalarType.INT8,
+        #         always_ram=True,
+        #     ),
+        # ),
         # quantization_config=models.ScalarQuantization(
         #     scalar=models.ScalarQuantizationConfig(
         #         type=models.ScalarType.INT8,
@@ -279,14 +287,7 @@ def create_collection(collection_name: str, size=768) -> None:
 def update_collection(collection_name: str, size) -> None:
     client.update_collection(
         collection_name=collection_name,
-        vectors_config=models.VectorParams(size=size, distance=models.Distance.COSINE),
-        optimizers_config=models.OptimizersConfigDiff(memmap_threshold=20000),
-        quantization_config=models.ScalarQuantization(
-            scalar=models.ScalarQuantizationConfig(
-                type=models.ScalarType.INT8,
-                always_ram=True,
-            ),
-        ),
+        # collection_params=models.VectorParams(size=size, distance=models.Distance.COSINE),
         # hnsw_config=models.HnswConfigDiff(on_disk=True, m=16,
         # ef_construct=512, full_scan_threshold=10000),
         # quantization_config=models.ScalarQuantization(
@@ -338,9 +339,7 @@ def search(vectors, collection_name: str, filters: dict, options: dict):
         with_vectors=False,
         search_params=models.SearchParams(
             quantization=models.QuantizationSearchParams(
-                ignore=True,
-                rescore=False,
-                oversampling=2.0,
+                rescore=True
             )),
         query_filter=models.Filter(
             must=must,
@@ -435,9 +434,12 @@ def filters_should(filters: dict):
             )
     return should if len(should) > 0 else None
 
-if __name__ == '__main__':
-    client = QdrantClient(
-        url="http://localhost:6333",
-    )
+# if __name__ == '__main__':
+#     client = QdrantClient(
+#         # url="http://localhost:6333",
+#         url="https://9c034f95-4fec-472b-a919-d088f1fcf901.eu-central-1-0.aws.cloud.qdrant.io",
+#         api_key="D6pVPTQSEwbvOCCdXbyhv3pkSk4IjuK1icfL4a_Z8bDHSqRmnoN5bQ",
+#         timeout=20_000
+#     )
     
-    app.run(host='0.0.0.0', debug=False, threaded=True)
+#     app.run(host='0.0.0.0', debug=False, threaded=True)
